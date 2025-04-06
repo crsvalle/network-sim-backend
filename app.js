@@ -9,9 +9,9 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: "http://localhost:3000",  
+    origin: "http://localhost:3000",
     methods: ["GET", "POST"],
-    allowedHeaders: ["Content-Type"], 
+    allowedHeaders: ["Content-Type"],
     credentials: true,
   }
 });
@@ -24,38 +24,59 @@ app.get('/', (req, res) => {
 
 io.on('connection', (socket) => {
   console.log('A user connected');
-  
+
   socket.on('sendMessage', (data) => {
     console.log(`Received message from ${data.from} to ${data.to}`);
-    
-    // Define the network graph (adjust as necessary)
+  
     const graph = {
-      'A': { 'B': 2, 'C': 4 },
-      'B': { 'A': 2, 'C': 1, 'D': 7 },
-      'C': { 'A': 4, 'B': 1, 'D': 3 },
-      'D': { 'B': 7, 'C': 3 }
+      '192.168.1.1': { '192.168.1.2': 1, '192.168.1.3': 4 },
+      '192.168.1.2': { '192.168.1.3': 2, '192.168.1.4': 5 },
+      '192.168.1.3': { '192.168.1.4': 1 },
+      '192.168.1.4': {}
     };
-
-    // Run Dijkstra to find the shortest path from 'from' to 'to'
+  
     const { distances, previous } = dijkstra(graph, data.from);
-
-    // Reconstruct the shortest path from 'from' to 'to'
+  
+    // Reconstruct shortest path
     let path = [];
     let currentNode = data.to;
     while (currentNode) {
       path.unshift(currentNode);
       currentNode = previous[currentNode];
     }
-
-    // Send the path to the frontend (along with the message)
+  
     const message = `Message from ${data.from} to ${data.to} will take the path: ${path.join(' -> ')}`;
-    socket.emit('networkUpdate', message);
-    socket.broadcast.emit('networkUpdate', message);
-  });
-
-  socket.on('disconnect', () => {
-    console.log('User disconnected');
-  });
+  
+    // Convert to vis-network format
+    const nodes = Object.keys(graph).map((ip) => ({
+      id: ip,
+      label: ip,
+      color: path.includes(ip) ? '#4caf50' : '#97C2FC',
+    }));
+  
+    const edges = [];
+    for (let [from, neighbors] of Object.entries(graph)) {
+      for (let [to, weight] of Object.entries(neighbors)) {
+        edges.push({
+          from,
+          to,
+          label: weight.toString(),
+          color: {
+            color:
+              path.includes(from) &&
+              path.includes(to) &&
+              path.indexOf(to) === path.indexOf(from) + 1
+                ? '#4caf50'
+                : '#848484',
+          },
+          arrows: 'to',
+        });
+      }
+    }
+  
+    socket.emit('networkUpdate', { message, nodes, edges });
+    socket.broadcast.emit('networkUpdate', { message, nodes, edges });
+  });  
 });
 
 const PORT = process.env.PORT || 8000;
