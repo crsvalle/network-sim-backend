@@ -2,13 +2,13 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
-const { dijkstra } = require('./dijkstras'); 
+const { dijkstra } = require('./dijkstras');
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: "http://localhost:3000",  
+    origin: "http://localhost:3000",
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"],
     credentials: true,
@@ -46,8 +46,8 @@ function sendHopUpdate({ socket, node, index, path, allEdges, initialNodeState, 
     color: {
       color:
         activePath.includes(e.from) &&
-        activePath.includes(e.to) &&
-        activePath.indexOf(e.to) === activePath.indexOf(e.from) + 1
+          activePath.includes(e.to) &&
+          activePath.indexOf(e.to) === activePath.indexOf(e.from) + 1
           ? lost ? '#bdbdbd' : '#4caf50'
           : '#848484',
     },
@@ -83,22 +83,17 @@ io.on('connection', (socket) => {
   socket.on('sendMessage', (data) => {
     console.log('Received sendMessage data:', data);
 
-    const graph = {
-      '192.168.1.1': { '192.168.1.2': 1, '192.168.1.3': 4 },
-      '192.168.1.2': { '192.168.1.3': 2, '192.168.1.4': 5 },
-      '192.168.1.3': { '192.168.1.4': 1 },
-      '192.168.1.4': {}
-    };
+    const { from, to, graph } = data;
 
-    if (!graph[data.from] || !graph[data.to]) {
+    if (!graph[from] || !graph[to]) {
       socket.emit('networkUpdate', { message: 'Invalid nodes. Path cannot be calculated.' });
       return;
     }
 
-    const { distances, previous } = dijkstra(graph, data.from);
+    const { distances, previous } = dijkstra(graph, from);
 
     let path = [];
-    let currentNode = data.to;
+    let currentNode = to;
     while (currentNode) {
       path.unshift(currentNode);
       currentNode = previous[currentNode];
