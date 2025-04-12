@@ -21,6 +21,13 @@ app.get('/', (req, res) => {
   res.send('Network Simulation Backend');
 });
 
+function simulatePacketConditions() {
+  return {
+    lost: Math.random() < 0.1, // 10% chance to drop packet
+    delay: Math.random() * 1500 + 500 // Delay between 500ms and 2000ms
+  };
+}
+
 io.on('connection', (socket) => {
   console.log('A user connected');
 
@@ -34,39 +41,31 @@ io.on('connection', (socket) => {
       '192.168.1.4': {}
     };
 
-    // Check if from and to nodes exist in the graph
     if (!graph[data.from] || !graph[data.to]) {
       socket.emit('networkUpdate', { message: 'Invalid nodes. Path cannot be calculated.' });
       return;
     }
 
-    // Run Dijkstra's algorithm to get distances and previous nodes
     const { distances, previous } = dijkstra(graph, data.from);
 
-    // Reconstruct the path from the `from` node to `to` node
     let path = [];
     let currentNode = data.to;
-
     while (currentNode) {
-      path.unshift(currentNode); // Add the current node to the beginning of the path
-      currentNode = previous[currentNode]; // Move to the previous node
+      path.unshift(currentNode);
+      currentNode = previous[currentNode];
     }
 
-    // If no path exists (previous is null)
     if (distances[data.to] === Infinity) {
       socket.emit('networkUpdate', { message: 'No valid path found.' });
       return;
     }
 
-
-    // Prepare the initial node state
     const initialNodeState = Object.keys(graph).map((ip) => ({
       id: ip,
       label: ip,
-      color: '#97C2FC',  
+      color: '#97C2FC',
     }));
 
-    // Prepare the edges from the graph
     const allEdges = [];
     for (let [from, neighbors] of Object.entries(graph)) {
       for (let [to, weight] of Object.entries(neighbors)) {
@@ -80,22 +79,20 @@ io.on('connection', (socket) => {
       }
     }
 
-    // Update nodes and edges based on the reconstructed path
     path.forEach((node, index) => {
+      const { lost, delay } = simulatePacketConditions();
       setTimeout(() => {
         const activePath = path.slice(0, index + 1);
 
-        // Update node colors
         const updatedNodes = initialNodeState.map((n) => ({
           ...n,
           color: activePath.includes(n.id)
             ? n.id === node
-              ? '#f44336' // Red for current node
-              : '#4caf50' // Green for visited nodes
-            : '#97C2FC', // Default color
+              ? lost ? '#9e9e9e' : '#f44336'
+              : '#4caf50'
+            : '#97C2FC',
         }));
 
-        // Update edge colors
         const updatedEdges = allEdges.map((e) => ({
           ...e,
           color: {
@@ -103,36 +100,35 @@ io.on('connection', (socket) => {
               activePath.includes(e.from) &&
               activePath.includes(e.to) &&
               activePath.indexOf(e.to) === activePath.indexOf(e.from) + 1
-                ? '#4caf50'  // Green for active edges
-                : '#848484', // Default edge color
+                ? lost ? '#bdbdbd' : '#4caf50'
+                : '#848484',
           },
         }));
 
-        // Determine the message based on the node index in the path
-        const message = index === 0
-          ? `Starting from ${node}`
-          : index === path.length - 1
-            ? `Arrived at ${node}`
-            : `Hopped to ${node}`;
+        const message = lost
+          ? `❌ Packet dropped at ${node}`
+          : index === 0
+            ? `📤 Starting from ${node}`
+            : index === path.length - 1
+              ? `✅ Arrived at ${node}`
+              : `➡️ Hopped to ${node}`;
 
+        console.log(`Sending update for node: ${node}, lost: ${lost}, delay: ${delay.toFixed(0)}ms`);
 
-        // Emit the network update to the frontend
         socket.emit('networkUpdate', {
           message,
           nodes: updatedNodes,
           edges: updatedEdges,
         });
-      }, index * 1500); 
+      }, index * 1500 + delay);
     });
   });
 
-  // Handle user disconnect
   socket.on('disconnect', () => {
     console.log('A user disconnected');
   });
 });
 
-// Start the server
 const PORT = process.env.PORT || 8000;
 server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
