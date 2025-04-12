@@ -23,9 +23,58 @@ app.get('/', (req, res) => {
 
 function simulatePacketConditions() {
   return {
-    lost: Math.random() < 0.1, // 10% chance to drop packet
-    delay: Math.random() * 1500 + 500 // Delay between 500ms and 2000ms
+    lost: Math.random() < 0.1,
+    delay: Math.random() * 1500 + 500,
   };
+}
+
+function sendHopUpdate({ socket, node, index, path, allEdges, initialNodeState, maxRetries = 2, attempt = 1 }) {
+  const { lost, delay } = simulatePacketConditions();
+  const activePath = path.slice(0, index + 1);
+
+  const updatedNodes = initialNodeState.map((n) => ({
+    ...n,
+    color: activePath.includes(n.id)
+      ? n.id === node
+        ? lost ? '#9e9e9e' : '#f44336'
+        : '#4caf50'
+      : '#97C2FC',
+  }));
+
+  const updatedEdges = allEdges.map((e) => ({
+    ...e,
+    color: {
+      color:
+        activePath.includes(e.from) &&
+        activePath.includes(e.to) &&
+        activePath.indexOf(e.to) === activePath.indexOf(e.from) + 1
+          ? lost ? '#bdbdbd' : '#4caf50'
+          : '#848484',
+    },
+  }));
+
+  const baseMsg = attempt > 1 ? ` (retry #${attempt})` : '';
+  const message = lost
+    ? `❌ Packet dropped at ${node}${baseMsg}`
+    : index === 0
+      ? `📤 Starting from ${node}${baseMsg}`
+      : index === path.length - 1
+        ? `✅ Arrived at ${node}${baseMsg}`
+        : `➡️ Hopped to ${node}${baseMsg}`;
+
+  console.log(`Sending update for node: ${node}, lost: ${lost}, delay: ${delay.toFixed(0)}ms, attempt: ${attempt}`);
+
+  setTimeout(() => {
+    socket.emit('networkUpdate', {
+      message,
+      nodes: updatedNodes,
+      edges: updatedEdges,
+    });
+
+    if (lost && attempt < maxRetries) {
+      sendHopUpdate({ socket, node, index, path, allEdges, initialNodeState, maxRetries, attempt: attempt + 1 });
+    }
+  }, index * 1500 + delay);
 }
 
 io.on('connection', (socket) => {
@@ -80,47 +129,15 @@ io.on('connection', (socket) => {
     }
 
     path.forEach((node, index) => {
-      const { lost, delay } = simulatePacketConditions();
-      setTimeout(() => {
-        const activePath = path.slice(0, index + 1);
-
-        const updatedNodes = initialNodeState.map((n) => ({
-          ...n,
-          color: activePath.includes(n.id)
-            ? n.id === node
-              ? lost ? '#9e9e9e' : '#f44336'
-              : '#4caf50'
-            : '#97C2FC',
-        }));
-
-        const updatedEdges = allEdges.map((e) => ({
-          ...e,
-          color: {
-            color:
-              activePath.includes(e.from) &&
-              activePath.includes(e.to) &&
-              activePath.indexOf(e.to) === activePath.indexOf(e.from) + 1
-                ? lost ? '#bdbdbd' : '#4caf50'
-                : '#848484',
-          },
-        }));
-
-        const message = lost
-          ? `❌ Packet dropped at ${node}`
-          : index === 0
-            ? `📤 Starting from ${node}`
-            : index === path.length - 1
-              ? `✅ Arrived at ${node}`
-              : `➡️ Hopped to ${node}`;
-
-        console.log(`Sending update for node: ${node}, lost: ${lost}, delay: ${delay.toFixed(0)}ms`);
-
-        socket.emit('networkUpdate', {
-          message,
-          nodes: updatedNodes,
-          edges: updatedEdges,
-        });
-      }, index * 1500 + delay);
+      sendHopUpdate({
+        socket,
+        node,
+        index,
+        path,
+        allEdges,
+        initialNodeState,
+        maxRetries: 2,
+      });
     });
   });
 
