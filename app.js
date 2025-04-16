@@ -3,10 +3,12 @@ const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
 const { dijkstra } = require('./dijkstras');
-const { v4: uuidv4 } = require('uuid'); 
+const sendHopUpdate = require('./utils/sendHopUpdate');
+const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 const server = http.createServer(app);
+
 const io = socketIo(server, {
   cors: {
     origin: "http://localhost:3000",
@@ -18,70 +20,19 @@ const io = socketIo(server, {
 
 app.use(cors());
 
-function simulatePacketConditions() {
-  return {
-    lost: Math.random() < 0.1,
-    delay: Math.random() * 1000 + 300
-  };
-}
-
-function sendHopUpdate({ socket, node, index, path, allEdges, initialNodeState, simulationId, maxRetries = 2, attempt = 1 }) {
-  const { lost, delay } = simulatePacketConditions();
-  const activePath = path.slice(0, index + 1);
-
-  const updatedNodes = initialNodeState.map(n => ({
-    ...n,
-    color: activePath.includes(n.id)
-      ? n.id === node
-        ? lost ? '#9e9e9e' : '#f44336'
-        : '#4caf50'
-      : '#97C2FC',
-  }));
-
-  const updatedEdges = allEdges.map(e => ({
-    ...e,
-    color: {
-      color:
-        activePath.includes(e.from) &&
-        activePath.includes(e.to) &&
-        activePath.indexOf(e.to) === activePath.indexOf(e.from) + 1
-          ? lost ? '#bdbdbd' : '#4caf50'
-          : '#848484',
-    },
-  }));
-
-  const message = lost
-    ? `❌ Packet dropped at ${node}${attempt > 1 ? ` (retry #${attempt})` : ''}`
-    : index === 0
-      ? `📤 Starting from ${node}`
-      : index === path.length - 1
-        ? `✅ Arrived at ${node}`
-        : `➡️ Hopped to ${node}`;
-
-  setTimeout(() => {
-    socket.emit('networkUpdate', {
-      message,
-      nodes: updatedNodes,
-      edges: updatedEdges,
-      path,           // include full path for frontend animation
-      simulationId,   // for tracking animations
-    });
-
-    if (lost && attempt < maxRetries) {
-      sendHopUpdate({ socket, node, index, path, allEdges, initialNodeState, simulationId, attempt: attempt + 1 });
-    }
-  }, index * 1000 + delay);
-}
-
 io.on('connection', (socket) => {
-  console.log('User connected');
+  console.log('🔌 User connected');
 
   socket.on('sendMessage', (data) => {
-    const { from, to, graph } = data;
+    const { from, to, graph, colorId } = data; 
     const simulationId = uuidv4();
 
     if (!graph[from] || !graph[to]) {
-      socket.emit('networkUpdate', { message: '❗ Invalid nodes or graph structure.', simulationId });
+      socket.emit('networkUpdate', {
+        message: '❗ Invalid nodes or graph structure.', 
+        simulationId,
+        colorId,
+      });
       return;
     }
 
@@ -95,7 +46,11 @@ io.on('connection', (socket) => {
     }
 
     if (distances[to] === Infinity) {
-      socket.emit('networkUpdate', { message: '❗ No path found.', simulationId });
+      socket.emit('networkUpdate', {
+        message: '❗ No path found.', 
+        simulationId,
+        colorId,
+      });
       return;
     }
 
@@ -127,12 +82,13 @@ io.on('connection', (socket) => {
         allEdges,
         initialNodeState,
         simulationId,
+        colorId, 
       });
     });
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected');
+    console.log('❌ User disconnected');
   });
 });
 
