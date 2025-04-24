@@ -66,8 +66,14 @@ io.on('connection', (socket) => {
       if (switches.includes(currentNode)) {
         switchTables[currentNode][from] = prevNode;
         console.log(`🔍 Switch ${currentNode} learned ${from} is via ${prevNode}`);
+    
+        socket.emit('switchLearningUpdate', {
+          switchId: currentNode,
+          learnedTable: switchTables[currentNode],
+        });
       }
     }
+    
 
     const initialNodeState = Object.keys(graph).map(ip => ({
       id: ip,
