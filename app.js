@@ -20,6 +20,13 @@ const io = socketIo(server, {
 
 app.use(cors());
 
+
+const switches = ['10.0.1.1', '10.0.2.1'];
+const switchTables = {};
+switches.forEach((sw) => {
+  switchTables[sw] = {}; 
+});
+
 io.on('connection', (socket) => {
   console.log('🔌 User connected');
 
@@ -37,7 +44,6 @@ io.on('connection', (socket) => {
     }
 
     const { distances, previous } = dijkstra(graph, from);
-
     let path = [];
     let currentNode = to;
     while (currentNode) {
@@ -52,6 +58,15 @@ io.on('connection', (socket) => {
         colorId,
       });
       return;
+    }
+
+    for (let i = 1; i < path.length; i++) {
+      const currentNode = path[i];
+      const prevNode = path[i - 1];
+      if (switches.includes(currentNode)) {
+        switchTables[currentNode][from] = prevNode;
+        console.log(`🔍 Switch ${currentNode} learned ${from} is via ${prevNode}`);
+      }
     }
 
     const initialNodeState = Object.keys(graph).map(ip => ({
@@ -73,6 +88,7 @@ io.on('connection', (socket) => {
       }
     }
 
+    // Emit each hop as before
     path.forEach((node, index) => {
       sendHopUpdate({
         socket,
