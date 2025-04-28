@@ -31,9 +31,9 @@ io.on('connection', (socket) => {
   console.log('🔌 User connected');
 
   socket.on('sendMessage', (data) => {
-    const { from, to, graph, colorId } = data; 
+    const { from, to, graph, colorId, disabledLinks = [] } = data; 
     const simulationId = uuidv4();
-
+  
     if (!graph[from] || !graph[to]) {
       socket.emit('networkUpdate', {
         message: '❗ Invalid nodes or graph structure.', 
@@ -42,45 +42,59 @@ io.on('connection', (socket) => {
       });
       return;
     }
-
-    const { distances, previous } = dijkstra(graph, from);
+  
+    // Filter out disabled links
+    const filteredGraph = {};
+    for (let [src, neighbors] of Object.entries(graph)) {
+      filteredGraph[src] = {};
+      for (let [dest, weight] of Object.entries(neighbors)) {
+        const isDisabled = disabledLinks.some(
+          (link) => link.from === src && link.to === dest
+        );
+        if (!isDisabled) {
+          filteredGraph[src][dest] = weight;
+        }
+      }
+    }
+  
+    // Use filtered graph for Dijkstra
+    const { distances, previous } = dijkstra(filteredGraph, from);
     let path = [];
     let currentNode = to;
     while (currentNode) {
       path.unshift(currentNode);
       currentNode = previous[currentNode];
     }
-
+  
     if (distances[to] === Infinity) {
       socket.emit('networkUpdate', {
-        message: '❗ No path found.', 
+        message: '❗ No path found due to link failure.', 
         simulationId,
         colorId,
       });
       return;
     }
-
+  
     for (let i = 1; i < path.length; i++) {
       const currentNode = path[i];
       const prevNode = path[i - 1];
       if (switches.includes(currentNode)) {
         switchTables[currentNode][from] = prevNode;
         console.log(`🔍 Switch ${currentNode} learned ${from} is via ${prevNode}`);
-    
+  
         socket.emit('switchLearningUpdate', {
           switchId: currentNode,
           learnedTable: switchTables[currentNode],
         });
       }
     }
-    
-
+  
     const initialNodeState = Object.keys(graph).map(ip => ({
       id: ip,
       label: ip,
       color: '#97C2FC',
     }));
-
+  
     const allEdges = [];
     for (let [src, neighbors] of Object.entries(graph)) {
       for (let [dest, weight] of Object.entries(neighbors)) {
@@ -93,8 +107,7 @@ io.on('connection', (socket) => {
         });
       }
     }
-
-    // Emit each hop as before
+  
     path.forEach((node, index) => {
       sendHopUpdate({
         socket,
@@ -108,6 +121,7 @@ io.on('connection', (socket) => {
       });
     });
   });
+  
 
   socket.on('disconnect', () => {
     console.log('❌ User disconnected');
