@@ -20,7 +20,6 @@ const io = socketIo(server, {
 
 app.use(cors());
 
-
 const switches = ['10.0.1.1', '10.0.2.1'];
 const switchTables = {};
 switches.forEach((sw) => {
@@ -33,7 +32,7 @@ io.on('connection', (socket) => {
   socket.on('sendMessage', (data) => {
     const { from, to, graph, colorId, disabledLinks = [] } = data; 
     const simulationId = uuidv4();
-  
+
     if (!graph[from] || !graph[to]) {
       socket.emit('networkUpdate', {
         message: '❗ Invalid nodes or graph structure.', 
@@ -42,8 +41,7 @@ io.on('connection', (socket) => {
       });
       return;
     }
-  
-    // Filter out disabled links
+
     const filteredGraph = {};
     for (let [src, neighbors] of Object.entries(graph)) {
       filteredGraph[src] = {};
@@ -56,8 +54,7 @@ io.on('connection', (socket) => {
         }
       }
     }
-  
-    // Use filtered graph for Dijkstra
+
     const { distances, previous } = dijkstra(filteredGraph, from);
     let path = [];
     let currentNode = to;
@@ -65,7 +62,7 @@ io.on('connection', (socket) => {
       path.unshift(currentNode);
       currentNode = previous[currentNode];
     }
-  
+
     if (distances[to] === Infinity) {
       socket.emit('networkUpdate', {
         message: '❗ No path found due to link failure.', 
@@ -74,7 +71,7 @@ io.on('connection', (socket) => {
       });
       return;
     }
-  
+
     for (let i = 1; i < path.length; i++) {
       const currentNode = path[i];
       const prevNode = path[i - 1];
@@ -88,13 +85,13 @@ io.on('connection', (socket) => {
         });
       }
     }
-  
+
     const initialNodeState = Object.keys(graph).map(ip => ({
       id: ip,
       label: ip,
       color: '#97C2FC',
     }));
-  
+
     const allEdges = [];
     for (let [src, neighbors] of Object.entries(graph)) {
       for (let [dest, weight] of Object.entries(neighbors)) {
@@ -107,7 +104,7 @@ io.on('connection', (socket) => {
         });
       }
     }
-  
+
     path.forEach((node, index) => {
       sendHopUpdate({
         socket,
@@ -117,11 +114,11 @@ io.on('connection', (socket) => {
         allEdges,
         initialNodeState,
         simulationId,
-        colorId, 
+        colorId,
+        disabledLinks,
       });
     });
   });
-  
 
   socket.on('disconnect', () => {
     console.log('❌ User disconnected');
