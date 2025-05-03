@@ -5,6 +5,9 @@ const cors = require('cors');
 const { dijkstra } = require('./dijkstras');
 const sendHopUpdate = require('./utils/sendHopUpdate');
 const { v4: uuidv4 } = require('uuid');
+const { bellmanFord } = require('./bellmanFord');
+
+
 
 const app = express();
 const server = http.createServer(app);
@@ -23,7 +26,7 @@ const switches = ['10.0.1.1', '10.0.2.1'];
 const switchTables = {};
 const switchQueues = {};
 const MAX_QUEUE_SIZE = 5;
-const edgeUtilization = {}; // NEW: Tracks how often each edge is used
+const edgeUtilization = {};
 
 switches.forEach((sw) => {
   switchTables[sw] = {};
@@ -65,7 +68,26 @@ io.on('connection', (socket) => {
       }
     }
 
-    const { distances, previous } = dijkstra(filteredGraph, from);
+    let distances, previous;
+    if (data.algorithm === 'bellman-ford') {
+      try {
+        const result = bellmanFord(filteredGraph, from);
+        distances = result.distances;
+        previous = result.predecessors;
+      } catch (err) {
+        socket.emit('networkUpdate', {
+          message: '❗ Bellman-Ford Error: ' + err.message,
+          simulationId,
+          colorId,
+        });
+        return;
+      }
+    } else {
+      const result = dijkstra(filteredGraph, from);
+      distances = result.distances;
+      previous = result.previous;
+    }
+
     let path = [];
     let currentNode = to;
     while (currentNode) {
