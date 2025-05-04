@@ -8,7 +8,6 @@ const { v4: uuidv4 } = require('uuid');
 const { bellmanFord } = require('./bellmanFord');
 
 
-
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
@@ -28,6 +27,7 @@ const switchQueues = {};
 const MAX_QUEUE_SIZE = 5;
 const edgeUtilization = {};
 
+
 switches.forEach((sw) => {
   switchTables[sw] = {};
   switchQueues[sw] = [];
@@ -45,6 +45,16 @@ io.on('connection', (socket) => {
   socket.on('sendMessage', (data) => {
     const { from, to, graph, colorId, disabledLinks = [] } = data;
     const simulationId = uuidv4();
+    const MAX_RETRIES = 2;
+    const retryCount = data.retryCount || 0;
+
+    function retryPacket(originalData, retryCount) {
+      const newData = { ...originalData, retryCount: retryCount + 1 };
+      setTimeout(() => {
+        socket.emit('sendMessage', newData);
+      }, 1000); 
+    }
+
 
     if (!graph[from] || !graph[to]) {
       socket.emit('networkUpdate', {
@@ -123,16 +133,27 @@ io.on('connection', (socket) => {
         switchTables[currentNode][from] = prevNode;
 
         if (switchQueues[currentNode].length >= MAX_QUEUE_SIZE) {
-          socket.emit('networkUpdate', {
-            message: `❌ Packet dropped at ${currentNode} (Queue Full)`,
-            nodes: [],
-            edges: [],
-            path: [],
-            simulationId,
-            colorId,
-          });
+          if (data.retryCount && data.retryCount >= MAX_RETRIES) {
+            socket.emit('networkUpdate', {
+              message: `❌ Packet dropped permanently at ${currentNode} after ${data.retryCount} retries`,
+              nodes: [],
+              edges: [],
+              path: [],
+              simulationId,
+              colorId,
+            });
+          } else {
+            socket.emit('networkUpdate', {
+              message: `⚠️ Packet dropped at ${currentNode} — retrying (${(data.retryCount || 0) + 1}/${MAX_RETRIES})`,
+              simulationId,
+              colorId,
+            });
+        
+            retryPacket(data, data.retryCount || 0);
+          }
           return;
         }
+        
 
         switchQueues[currentNode].push({ from, simulationId, colorId });
 
