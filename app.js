@@ -52,7 +52,7 @@ io.on('connection', (socket) => {
       const newData = { ...originalData, retryCount: retryCount + 1 };
       setTimeout(() => {
         socket.emit('sendMessage', newData);
-      }, 1000); 
+      }, 1000);
     }
 
 
@@ -113,6 +113,19 @@ io.on('connection', (socket) => {
       });
       return;
     }
+    const totalCost = path.reduce((sum, node, i) => {
+      if (i === 0) return 0;
+      return sum + graph[path[i - 1]][node];
+    }, 0);
+
+    socket.emit('simulationSummary', {
+      simulationId,
+      totalHops: path.length - 1,
+      totalCost,
+      retryCount: data.retryCount || 0,
+      algorithm: data.algorithm || 'dijkstra',
+    });
+
 
     // Switch logic + queueing
     for (let i = 1; i < path.length; i++) {
@@ -148,12 +161,12 @@ io.on('connection', (socket) => {
               simulationId,
               colorId,
             });
-        
+
             retryPacket(data, data.retryCount || 0);
           }
           return;
         }
-        
+
 
         switchQueues[currentNode].push({ from, simulationId, colorId });
 
